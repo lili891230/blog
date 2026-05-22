@@ -1,0 +1,7 @@
+name = "li-blog"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "BLOG_KV"
+id = "c5ba1c2520bf4907bdc3ac3f4410440b"
