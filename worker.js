@@ -6,6 +6,7 @@ if(p==="/api/poll/vote"&&m==="POST")return apiPollVote(req,env);
 if(p==="/api/upload"&&m==="POST")return apiUpload(req,env);
 if(/^\/img\/(.+)$/.test(p))return apiImg(env,RegExp.$1);
 if(p==="/favicon.svg")return favico();
+if(p==="/admin/editor.js")return editorJS();
 if(p==="/admin"){if(m==="GET")return html(pgLogin());if(m==="POST")return doLogin(req,env)}
 if(p==="/admin/logout")return doLogout();
 if(p==="/admin/dashboard")return auth(env,req,async()=>html(await pgDash(env)));
@@ -132,40 +133,68 @@ async function doLogin(req,env){var fd=await req.formData();var pwd=fd.get("pwd"
 function doLogout(){return new Response(null,{status:302,headers:{Location:"/admin","Set-Cookie":"bt=; Path=/; HttpOnly; Max-Age=0"}})}
 async function pgDash(env){var[cats,arts]=await Promise.all([env.BLOG_KV.get("cats","json"),env.BLOG_KV.get("arts","json")]);var list=arts||[];var cm3=ckm(cats);var items=list.sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||b.createdAt-a.createdAt).map(a=>{var c=cm3[a.catId]||{name:"\u672a\u5206\u7c7b",color:"#94a3b8"};return'<div class="art-item"><div class="art-info"><div class="art-t">'+(a.pinned?"\ud83d\udccc ":"")+esc(a.title)+'</div><div class="art-meta"><span class="art-dot" style="background:'+c.color+'"></span>'+esc(c.name)+" \u00b7 "+ago(a.createdAt)+'</div></div><div class="art-acts"><a href="/admin/editor/'+a.id+'" class="btn btn-sm btn-o">\u7f16\u8f91</a><form method="POST" action="/admin/pin/'+a.id+'" style="display:inline"><button class="btn btn-sm btn-a">'+(a.pinned?"\u53d6\u6d88":"\u7f6e\u9876")+'</button></form><form method="POST" action="/admin/del/'+a.id+'" style="display:inline" onsubmit="return confirm(\'\u786e\u5b9a?\')"><button class="btn btn-sm btn-r">\u5220\u9664</button></form></div></div>'}).join("");return adminW("\u4eea\u8868\u677f",'<h1 class="admin-h1">\u4eea\u8868\u677f</h1><div class="stats"><div class="stat-card"><div class="stat-num">'+list.length+'</div><div class="stat-label">\u6587\u7ae0</div></div><div class="stat-card"><div class="stat-num">'+(cats||[]).length+'</div><div class="stat-label">\u5206\u7c7b</div></div><div class="stat-card"><div class="stat-num">'+list.filter(a=>a.pinned).length+'</div><div class="stat-label">\u7f6e\u9876</div></div></div><h2 style="font-family:var(--ff);font-size:1.1rem;margin-bottom:1rem">\u6587\u7ae0\u7ba1\u7406</h2><div class="art-list">'+(items||"<div style=\"color:var(--text3);padding:2rem;text-align:center\">\u6682\u65e0</div>")+'</div>',"d")}
 
-async function pgEditor(env,id){var art=null,cd=null;if(id){var arts=await env.BLOG_KV.get("arts","json")||[];art=arts.find(a=>a.id===id);if(!art)return"\u6587\u7ae0\u4e0d\u5b58\u5728";var raw=await env.BLOG_KV.get("c:"+id);if(raw)cd=typeof raw==="string"?JSON.parse(raw):raw}var cats=await env.BLOG_KV.get("cats","json")||[];var content=cd?(cd.content||""):"";var polls=cd?(cd.polls||{}):{};var catOpts=cats.map(c=>'<option value="'+c.id+'"'+(art&&art.catId===c.id?" selected":"")+'>'+esc(c.name)+'</option>').join("");
-var h='<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+(id?"\u7f16\u8f91":"\u5199\u6587\u7ae0")+'</title>'+fonts()+styles()+'</head><body>';
-h+='<nav class="admin-nav"><span class="admin-brand">\u674e\u529b\u7684blog \u00b7 \u540e\u53f0</span><div class="admin-links">';
-h+='<a href="/admin/dashboard" class="admin-link">\u4eea\u8868\u677f</a><a href="/admin/editor" class="admin-link active">\u5199\u6587\u7ae0</a><a href="/admin/cats" class="admin-link">\u5206\u7c7b</a><a href="/admin/settings" class="admin-link">\u8bbe\u7f6e</a>';
-h+='</div><div class="admin-right"><a href="/admin/dashboard" class="btn btn-sm btn-o" style="color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2)">\u8fd4\u56de</a></div></nav>';
-h+='<div class="admin-body"><input type="hidden" id="art-id" value="'+(id||"")+'">';
+async function pgEditor(env,id){
+var art=null,cd=null;
+if(id){
+  var arts=await env.BLOG_KV.get("arts","json")||[];
+  art=arts.find(a=>a.id===id);
+  if(!art)return "\u6587\u7ae0\u4e0d\u5b58\u5728";
+  var raw=await env.BLOG_KV.get("c:"+id);
+  if(raw)cd=typeof raw==="string"?JSON.parse(raw):raw;
+}
+var cats=await env.BLOG_KV.get("cats","json")||[];
+var content=cd?(cd.content||""):"";
+var polls=cd?(cd.polls||{}):{};
+var catOpts=cats.map(function(c){return '<option value="'+c.id+'"'+(art&&art.catId===c.id?" selected":"")+'>'+esc(c.name)+'</option>';}).join("");
+var SQ=String.fromCharCode(39);
+var h='';
+h+='<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
+h+='<title>'+(id?"\u7f16\u8f91":"\u5199\u6587\u7ae0")+'</title>'+fonts()+styles()+'</head><body>';
+h+='<nav class="admin-nav"><span class="admin-brand">\u674e\u529b\u7684blog \u00b7 \u540e\u53f0</span>';
+h+='<div class="admin-links">';
+h+='<a href="/admin/dashboard" class="admin-link">\u4eea\u8868\u677f</a>';
+h+='<a href="/admin/editor" class="admin-link active">\u5199\u6587\u7ae0</a>';
+h+='<a href="/admin/cats" class="admin-link">\u5206\u7c7b</a>';
+h+='<a href="/admin/settings" class="admin-link">\u8bbe\u7f6e</a>';
+h+='</div><div class="admin-right">';
+h+='<a href="/admin/dashboard" class="btn btn-sm btn-o" style="color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2)">\u8fd4\u56de</a>';
+h+='</div></nav>';
+h+='<div class="admin-body">';
+h+='<input type="hidden" id="art-id" value="'+(id||"")+'">';
 h+='<div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:end">';
-h+='<div class="fg" style="flex:1;min-width:200px;margin-bottom:0"><label class="fl">\u6587\u7ae0\u6807\u9898</label><input type="text" id="art-title" class="fi" value="'+esc(art?art.title:"")+'" placeholder="\u6807\u9898"></div>';
-h+='<div class="fg" style="min-width:150px;margin-bottom:0"><label class="fl">\u5206\u7c7b</label><select id="art-cat" class="fs">'+catOpts+'</select></div>';
+h+='<div class="fg" style="flex:1;min-width:200px;margin-bottom:0"><label class="fl">\u6587\u7ae0\u6807\u9898</label>';
+h+='<input type="text" id="art-title" class="fi" value="'+esc(art?art.title:"")+'" placeholder="\u6807\u9898"></div>';
+h+='<div class="fg" style="min-width:150px;margin-bottom:0"><label class="fl">\u5206\u7c7b</label>';
+h+='<select id="art-cat" class="fs">'+catOpts+'</select></div>';
 h+='<button class="btn btn-g" onclick="doSave()" style="height:42px">\ud83d\udcbe \u4fdd\u5b58</button>';
-h+='<a href="/admin/dashboard" class="btn btn-o" style="height:42px">\u53d6\u6d88</a></div>';
+h+='<a href="/admin/dashboard" class="btn btn-o" style="height:42px">\u53d6\u6d88</a>';
+h+='</div>';
 h+='<div class="editor-wrap"><div class="toolbar">';
-h+='<button class="tb" onclick="ec(\'bold\')"><b>B</b></button>';
-h+='<button class="tb" onclick="ec(\'italic\')"><i>I</i></button>';
-h+='<button class="tb" onclick="ec(\'underline\')"><u>U</u></button>';
-h+='<button class="tb" onclick="ec(\'strikethrough\')"><s>S</s></button>';
+h+='<button class="tb" onclick="ec('+SQ+'bold'+SQ+')"><b>B</b></button>';
+h+='<button class="tb" onclick="ec('+SQ+'italic'+SQ+')"><i>I</i></button>';
+h+='<button class="tb" onclick="ec('+SQ+'underline'+SQ+')"><u>U</u></button>';
+h+='<button class="tb" onclick="ec('+SQ+'strikethrough'+SQ+')"><s>S</s></button>';
 h+='<span class="tb-sep"></span>';
-h+='<button class="tb" onclick="ef(\'h1\')">H1</button>';
-h+='<button class="tb" onclick="ef(\'h2\')">H2</button>';
-h+='<button class="tb" onclick="ef(\'h3\')">H3</button>';
+h+='<button class="tb" onclick="ef('+SQ+'h1'+SQ+')">H1</button>';
+h+='<button class="tb" onclick="ef('+SQ+'h2'+SQ+')">H2</button>';
+h+='<button class="tb" onclick="ef('+SQ+'h3'+SQ+')">H3</button>';
 h+='<span class="tb-sep"></span>';
-h+='<button class="tb" onclick="ec(\'insertOrderedList\')">1.</button>';
-h+='<button class="tb" onclick="ec(\'insertUnorderedList\')">&bull;</button>';
+h+='<button class="tb" onclick="ec('+SQ+'insertOrderedList'+SQ+')">1.</button>';
+h+='<button class="tb" onclick="ec('+SQ+'insertUnorderedList'+SQ+')">&bull;</button>';
 h+='<span class="tb-sep"></span>';
 h+='<button class="tb" onclick="insLink()">\ud83d\udd17 \u94fe\u63a5</button>';
 h+='<button class="tb" onclick="insImg()">\ud83d\uddbc \u56fe\u7247</button>';
-h+='<button class="tb" onclick="document.getElementById(\'fup\').click()">\ud83d\udce4 \u4e0a\u4f20</button>';
+h+='<button class="tb" onclick="document.getElementById('+SQ+'fup'+SQ+').click()">\ud83d\udce4 \u4e0a\u4f20</button>';
 h+='<button class="tb" onclick="openPoll()">\ud83d\udcca \u6295\u7968</button>';
 h+='<span class="tb-sep"></span>';
-h+='<button class="tb" onclick="ef(\'blockquote\')">\u275d \u5f15\u7528</button>';
+h+='<button class="tb" onclick="ef('+SQ+'blockquote'+SQ+')">\u275d \u5f15\u7528</button>';
 h+='<button class="tb" onclick="insCode()">&lt;/&gt; \u4ee3\u7801</button>';
-h+='<button class="tb" onclick="ec(\'insertHorizontalRule\')"> \u2014\u2014</button>';
-h+='</div><div id="editor" class="editor-area" contenteditable="true">'+content+'</div></div>';
-h+='<input type="file" id="fup" accept="image/*" style="display:none"></div>';
+h+='<button class="tb" onclick="ec('+SQ+'insertHorizontalRule'+SQ+')"> \u2014\u2014</button>';
+h+='</div>';
+h+='<div id="editor" class="editor-area" contenteditable="true">'+content+'</div>';
+h+='</div>';
+h+='<input type="file" id="fup" accept="image/*" style="display:none">';
+h+='</div>';
 h+='<div id="pollModal" class="modal-bg" style="display:none"><div class="modal-box">';
 h+='<div class="modal-h">\ud83d\udcca \u63d2\u5165\u6295\u7968</div>';
 h+='<div class="fg"><label class="fl">\u6295\u7968\u6807\u9898</label><input type="text" id="pollTitle" class="fi" placeholder="\u6807\u9898"></div>';
@@ -173,26 +202,12 @@ h+='<div class="fg"><label class="fl">\u9009\u9879</label><div id="pollOpts">';
 h+='<div class="poi" style="display:flex;gap:.5rem;margin-bottom:.5rem"><input type="text" class="fi" placeholder="\u9009\u9879 1" style="flex:1"><button class="btn btn-sm btn-r" onclick="rmOpt(this)" style="padding:.3rem .5rem">&times;</button></div>';
 h+='<div class="poi" style="display:flex;gap:.5rem;margin-bottom:.5rem"><input type="text" class="fi" placeholder="\u9009\u9879 2" style="flex:1"><button class="btn btn-sm btn-r" onclick="rmOpt(this)" style="padding:.3rem .5rem">&times;</button></div>';
 h+='</div><button class="btn btn-sm btn-o" onclick="addOpt()" style="margin-top:.25rem">+ \u6dfb\u52a0</button></div>';
-h+='<div class="modal-btns"><button class="btn btn-o" onclick="closePoll()">\u53d6\u6d88</button><button class="btn btn-p" onclick="confirmPoll()">\u63d2\u5165</button></div></div></div>';
-
-var s="<scr"+"ipt>";
-s+="var editorPolls="+JSON.stringify(polls)+";";
-s+="var ed=document.getElementById('editor');";
-s+="function ec(c){ed.focus();document.execCommand(c,false,null)}";
-s+="function ef(tag){ed.focus();document.execCommand('formatBlock',false,'<'+tag+'>')}";
-s+="function insLink(){var u=prompt('\u94fe\u63a5:','https://');if(!u)return;ed.focus();var sel=window.getSelection();if(sel.toString()){document.execCommand('createLink',false,u)}else{document.execCommand('insertHTML',false,'<a href=\x22'+u+'\x22>'+u+'</a>')}}";
-s+="function insImg(){var u=prompt('\u56fe\u7247:','https://');if(!u)return;ed.focus();document.execCommand('insertHTML',false,'<img src=\x22'+u+'\x22 style=\x22max-width:100%;border-radius:8px\x22><p><br></p>')}";
-s+="document.getElementById('fup').addEventListener('change',async function(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=async function(){try{var resp=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:r.result,type:f.type})});var d=await resp.json();if(d.url){ed.focus();document.execCommand('insertHTML',false,'<img src=\x22'+d.url+'\x22 style=\x22max-width:100%;border-radius:8px\x22><p><br></p>')}else alert('\u5931\u8d25')}catch(err){alert('\u9519\u8bef')}};r.readAsDataURL(f);e.target.value=''})";
-s+="function insCode(){ed.focus();document.execCommand('insertHTML',false,'<pre><code>// code</code></pre><p><br></p>')}";
-s+="function openPoll(){document.getElementById('pollModal').style.display='flex';document.getElementById('pollTitle').value=''}";
-s+="function closePoll(){document.getElementById('pollModal').style.display='none'}";
-s+="function addOpt(){var c=document.getElementById('pollOpts'),n=c.children.length+1,d=document.createElement('div');d.className='poi';d.style.cssText='display:flex;gap:.5rem;margin-bottom:.5rem';var inp=document.createElement('input');inp.type='text';inp.className='fi';inp.placeholder='\u9009\u9879 '+n;inp.style.flex='1';var btn=document.createElement('button');btn.className='btn btn-sm btn-r';btn.style.cssText='padding:.3rem .5rem';btn.textContent='\u00d7';btn.onclick=function(){rmOpt(btn)};d.appendChild(inp);d.appendChild(btn);c.appendChild(d)}";
-s+="function rmOpt(b){if(document.getElementById('pollOpts').children.length>2)b.parentElement.remove()}";
-s+="function confirmPoll(){var t=document.getElementById('pollTitle').value.trim();if(!t){alert('\u6807\u9898');return}var inputs=document.querySelectorAll('#pollOpts input');var opts=[];inputs.forEach(function(i){if(i.value.trim())opts.push(i.value.trim())});if(opts.length<2){alert('\u81f3\u5c112\u4e2a');return}var pid='p'+Date.now()+Math.random().toString(36).substr(2,5);editorPolls[pid]={title:t,options:opts};var h2='<div class=\x22poll-embed\x22 contenteditable=\x22false\x22 data-poll-id=\x22'+pid+'\x22 style=\x22background:linear-gradient(135deg,#e0f2fe,#d1fae5);border:2px dashed #7dd3fc;border-radius:12px;padding:16px;margin:16px 0\x22><div style=\x22font-weight:600;margin-bottom:8px\x22>\ud83d\udcca '+t.replace(/</g,'&lt;')+'</div>'+opts.map(function(o){return'<div style=\x22font-size:14px;padding:4px 0\x22>\u2022 '+o.replace(/</g,'&lt;')+'</div>'}).join('')+'</div><p><br></p>';ed.focus();document.execCommand('insertHTML',false,h2);closePoll()}";
-s+="async function doSave(){var t=document.getElementById('art-title').value.trim();if(!t){alert('\u6807\u9898');return}var c=document.getElementById('art-cat').value;var id=document.getElementById('art-id').value;var body={id:id,title:t,catId:c,content:ed.innerHTML,polls:editorPolls};try{var r=await fetch('/admin/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.redirected||r.ok)window.location.href='/admin/dashboard';else alert('\u5931\u8d25')}catch(e){alert('\u9519\u8bef')}}";
-s+="document.addEventListener('keydown',function(e){if(e.ctrlKey&&e.key==='s'){e.preventDefault();doSave()}})";
-s+="<\/scr"+"ipt>";
-return h+s+"</body></html>"}
+h+='<div class="modal-btns"><button class="btn btn-o" onclick="closePoll()">\u53d6\u6d88</button><button class="btn btn-p" onclick="confirmPoll()">\u63d2\u5165</button></div>';
+h+='</div></div>';
+h+='<script>var editorPolls='+JSON.stringify(polls).replace(/<\//g,"<\\/")+'</script>';
+h+='<script src="/admin/editor.js"></script>';
+h+='</body></html>';
+return h}
 async function pgCats(env){var cats=await env.BLOG_KV.get("cats","json")||[];var arts=await env.BLOG_KV.get("arts","json")||[];var items=cats.map(c=>{var cnt=arts.filter(a=>a.catId===c.id).length;return'<div class="art-item"><div class="art-info"><div class="art-t"><span class="art-dot" style="background:'+c.color+';width:12px;height:12px;border-radius:50%;margin-right:.5rem"></span>'+esc(c.name)+'</div><div class="art-meta">'+cnt+' \u7bc7 \u00b7 '+esc(c.id)+'</div></div><div class="art-acts"><form method="POST" action="/admin/cat/del/'+c.id+'" style="display:inline" onsubmit="return confirm(\'\u5220\u9664?\')"><button class="btn btn-sm btn-r">\u5220\u9664</button></form></div></div>'}).join("");return adminW("\u5206\u7c7b",'<h1 class="admin-h1">\u5206\u7c7b\u7ba1\u7406</h1><div class="s-card"><div class="s-card-t">\u6dfb\u52a0\u5206\u7c7b</div><form method="POST" action="/admin/cat/add" style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:end"><div class="fg" style="flex:1;min-width:120px;margin-bottom:0"><label class="fl">ID</label><input type="text" name="id" class="fi" required></div><div class="fg" style="flex:1;min-width:120px;margin-bottom:0"><label class="fl">\u540d\u79f0</label><input type="text" name="name" class="fi" required></div><div class="fg" style="min-width:70px;margin-bottom:0"><label class="fl">\u989c\u8272</label><input type="color" name="color" class="fi" value="#0284c7" style="height:42px;padding:4px"></div><button type="submit" class="btn btn-g" style="height:42px">\u6dfb\u52a0</button></form></div><div class="art-list">'+(items||"\u6682\u65e0")+'</div>',"c")}
 async function actAddCat(req,env){var fd=await req.formData();var id=(fd.get("id")||"").trim().toLowerCase();var name=(fd.get("name")||"").trim();var color=fd.get("color")||"#0284c7";if(!id||!name)return redir("/admin/cats");var cats=await env.BLOG_KV.get("cats","json")||[];if(cats.find(c=>c.id===id))return redir("/admin/cats");cats.push({id,name,color});await env.BLOG_KV.put("cats",JSON.stringify(cats));return redir("/admin/cats")}
 async function actDelCat(env,id){var cats=await env.BLOG_KV.get("cats","json")||[];cats=cats.filter(c=>c.id!==id);await env.BLOG_KV.put("cats",JSON.stringify(cats));return redir("/admin/cats")}
@@ -204,4 +219,23 @@ async function actPin(env,id){var arts=await env.BLOG_KV.get("arts","json")||[];
 async function apiPollVote(req,env){var{pollId,optionIndex}=await req.json();if(!pollId||optionIndex===undefined)return jsonR({error:"\u53c2\u6570"},400);var poll=await env.BLOG_KV.get("poll:"+pollId,"json");if(!poll)return jsonR({error:"\u4e0d\u5b58\u5728"},404);var ip=req.headers.get("CF-Connecting-IP")||"unknown";if(poll.voters&&poll.voters[ip]!==undefined)return jsonR({error:"\u5df2\u6295"},400);if(optionIndex<0||optionIndex>=poll.options.length)return jsonR({error:"\u65e0\u6548"},400);poll.options[optionIndex].votes++;if(!poll.voters)poll.voters={};poll.voters[ip]=optionIndex;await env.BLOG_KV.put("poll:"+pollId,JSON.stringify(poll));return jsonR({success:true})}
 async function apiUpload(req,env){var{data,type}=await req.json();if(!data)return jsonR({error:"\u65e0"},400);if(data.length>3000000)return jsonR({error:"\u5927"},400);var id="img"+Date.now()+hex(4);await env.BLOG_KV.put("image:"+id,JSON.stringify({data,type:type||"image/png"}));return jsonR({url:"/img/"+id})}
 async function apiImg(env,id){var raw=await env.BLOG_KV.get("image:"+id);if(!raw)return new Response("Not Found",{status:404});var{data,type}=JSON.parse(raw);var b64=data.includes(",")?data.split(",")[1]:data;var bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));return new Response(bin,{headers:{"Content-Type":type||"image/png","Cache-Control":"public, max-age=31536000"}})}
+function editorJS(){
+var js=`
+var ed=document.getElementById("editor");
+function ec(c){ed.focus();document.execCommand(c,false,null)}
+function ef(tag){ed.focus();document.execCommand("formatBlock",false,"<"+tag+">")}
+function insLink(){var u=prompt("\u94fe\u63a5:","https://");if(!u)return;ed.focus();var sel=window.getSelection();if(sel.toString()){document.execCommand("createLink",false,u)}else{document.execCommand("insertHTML",false,'<a href="'+u+'">'+u+'</a>')}}
+function insImg(){var u=prompt("\u56fe\u7247:","https://");if(!u)return;ed.focus();document.execCommand("insertHTML",false,'<img src="'+u+'" style="max-width:100%;border-radius:8px"><p><br></p>')}
+document.getElementById("fup").addEventListener("change",async function(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=async function(){try{var resp=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data:r.result,type:f.type})});var d=await resp.json();if(d.url){ed.focus();document.execCommand("insertHTML",false,'<img src="'+d.url+'" style="max-width:100%;border-radius:8px"><p><br></p>')}else alert("\u5931\u8d25")}catch(err){alert("\u9519\u8bef")}};r.readAsDataURL(f);e.target.value=""})
+function insCode(){ed.focus();document.execCommand("insertHTML",false,"<pre><code>// code</code></pre><p><br></p>")}
+function openPoll(){document.getElementById("pollModal").style.display="flex";document.getElementById("pollTitle").value=""}
+function closePoll(){document.getElementById("pollModal").style.display="none"}
+function addOpt(){var c=document.getElementById("pollOpts"),n=c.children.length+1,d=document.createElement("div");d.className="poi";d.style.cssText="display:flex;gap:.5rem;margin-bottom:.5rem";var inp=document.createElement("input");inp.type="text";inp.className="fi";inp.placeholder="\u9009\u9879 "+n;inp.style.flex="1";var btn=document.createElement("button");btn.className="btn btn-sm btn-r";btn.style.cssText="padding:.3rem .5rem";btn.textContent="\u00d7";btn.onclick=function(){rmOpt(btn)};d.appendChild(inp);d.appendChild(btn);c.appendChild(d)}
+function rmOpt(b){if(document.getElementById("pollOpts").children.length>2)b.parentElement.remove()}
+function confirmPoll(){var t=document.getElementById("pollTitle").value.trim();if(!t){alert("\u6807\u9898");return}var inputs=document.querySelectorAll("#pollOpts input");var opts=[];inputs.forEach(function(i){if(i.value.trim())opts.push(i.value.trim())});if(opts.length<2){alert("\u81f3\u5c112\u4e2a");return}var pid="p"+Date.now()+Math.random().toString(36).substr(2,5);editorPolls[pid]={title:t,options:opts};var h2='<div class="poll-embed" contenteditable="false" data-poll-id="'+pid+'" style="background:linear-gradient(135deg,#e0f2fe,#d1fae5);border:2px dashed #7dd3fc;border-radius:12px;padding:16px;margin:16px 0"><div style="font-weight:600;margin-bottom:8px">\ud83d\udcca '+t.replace(/</g,"&lt;")+"</div>"+opts.map(function(o){return'<div style="font-size:14px;padding:4px 0">\u2022 '+o.replace(/</g,"&lt;")+"</div>"}).join("")+"</div><p><br></p>";ed.focus();document.execCommand("insertHTML",false,h2);closePoll()}
+async function doSave(){var t=document.getElementById("art-title").value.trim();if(!t){alert("\u6807\u9898");return}var c=document.getElementById("art-cat").value;var id=document.getElementById("art-id").value;var body={id:id,title:t,catId:c,content:ed.innerHTML,polls:editorPolls};try{var r=await fetch("/admin/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(r.redirected||r.ok)window.location.href="/admin/dashboard";else alert("\u5931\u8d25")}catch(e){alert("\u9519\u8bef")}}
+document.addEventListener("keydown",function(e){if(e.ctrlKey&&e.key==="s"){e.preventDefault();doSave()}})
+`;
+return new Response(js,{headers:{"Content-Type":"application/javascript"}})}
+
 function favico(){return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d4af37"/><stop offset=".5" stop-color="#c9b56a"/><stop offset="1" stop-color="#c0c0c0"/></linearGradient></defs><path d="M6 26C2 26 2 22 5 20C4 18 5 15 9 14C10 10 15 9 18 12C20 10 24 11 25 15C28 14 30 16 29 20C31 21 31 24 28 26Z" fill="url(#g)"/><text x="13" y="25" font-family="Georgia,serif" font-size="12" font-weight="bold" fill="white">L</text></svg>',{headers:{"Content-Type":"image/svg+xml","Cache-Control":"public, max-age=86400"}})}
